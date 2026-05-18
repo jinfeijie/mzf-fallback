@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>支付兜底后台</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #fff;
+      --line: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --danger: #dc2626;
+      --ok: #059669;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 12px; }
+    .hint { color: var(--muted); margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04); }
+    .full { grid-column: 1 / -1; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .field { flex: 1; min-width: 220px; margin-bottom: 12px; }
+    label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+    input, textarea, select { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    textarea { min-height: 88px; }
+    button { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--accent); color: #fff; cursor: pointer; }
+    button.secondary { background: #374151; }
+    button.danger { background: var(--danger); }
+    .pill { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: #e0e7ff; color: #4338ca; font-size: 13px; }
+    .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px 12px; }
+    .kv div:nth-child(odd) { color: var(--muted); }
+    .channel { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 12px; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    #toast { position: fixed; top: 16px; right: 16px; display: none; padding: 12px 14px; border-radius: 10px; color: #fff; background: #111827; z-index: 9; }
+    @media (max-width: 860px) { .grid, .kv { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>支付兜底后台</h1>
+    <div class="hint">手动操作会立即生效，但自动监控仍会继续收敛。</div>
+
+    <div class="grid">
+      <section class="card full">
+        <div class="row" style="justify-content: space-between; align-items: center;">
+          <div class="pill" id="state-pill">状态加载中</div>
+          <div class="actions">
+            <button class="secondary" onclick="reloadNow()">立即巡检</button>
+            <button onclick="refreshAll()">刷新</button>
+          </div>
+        </div>
+        <div id="channels"></div>
+        <div class="kv" style="margin-top: 14px;">
+          <div>最近检测时间</div><div id="last-check">-</div>
+          <div>最近切换时间</div><div id="last-switch">-</div>
+          <div>最近动作</div><div id="last-action">-</div>
+          <div>最近错误</div><div id="last-error">-</div>
+        </div>
+      </section>
+
+      <section class="card full">
+        <h2>基础配置</h2>
+        <div class="row">
+          <div class="field"><label>接口地址</label><input id="base_url"></div>
+          <div class="field"><label>授权信息</label><textarea id="authorization"></textarea></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>个人码编码</label><input id="primary_code"></div>
+          <div class="field"><label>企业码编码</label><input id="fallback_code"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>轮询间隔（秒）</label><input id="poll_interval_sec" type="number"></div>
+          <div class="field"><label>请求超时（秒）</label><input id="http_timeout_sec" type="number"></div>
+          <div class="field"><label>个人码下线确认次数</label><input id="down_confirm_times" type="number"></div>
+          <div class="field"><label>个人码恢复确认次数</label><input id="recover_confirm_times" type="number"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>最大重试次数</label><input id="max_retry" type="number"></div>
+          <div class="field"><label>最大退避秒数</label><input id="backoff_max_sec" type="number"></div>
+        </div>
+        <div class="actions"><button onclick="saveConfig()">保存配置</button></div>
+      </section>
+
+      <section class="card">
+        <h2>Bark 通知配置</h2>
+        <div class="field"><label>Bark 地址</label><input id="bark_base_url"></div>
+        <div class="field"><label>Bark 设备码</label><input id="bark_device_key"></div>
+        <div class="row">
+          <div class="field"><label>Bark 分组</label><input id="bark_group"></div>
+          <div class="field"><label>Bark 提示音</label><input id="bark_sound"></div>
+        </div>
+        <div class="actions"><button onclick="testBark()">发送测试提醒</button></div>
+      </section>
+
+      <section class="card">
+        <h2>手动控制</h2>
+        <div id="manual-actions" class="hint">先刷新状态获取渠道编号。</div>
+      </section>
+    </div>
+  </div>
+  <div id="toast"></div>
+  <script>
+    let current = null;
+
+    function showToast(text, error=false) {
+      const node = document.getElementById('toast');
+      node.textContent = text;
+      node.style.display = 'block';
+      node.style.background = error ? '#dc2626' : '#111827';
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => node.style.display = 'none', 2500);
+    }
+
+    async function fetchJSON(url, options={}) {
+      const resp = await fetch(url, { headers: { 'content-type': 'application/json' }, ...options });
+      const data = await resp.json();
+      if (!resp.ok || data.error) throw new Error(data.error || `请求失败: ${resp.status}`);
+      return data.data;
+    }
+
+    function fillConfig(cfg) {
+      ['base_url','authorization','primary_code','fallback_code','poll_interval_sec','http_timeout_sec','down_confirm_times','recover_confirm_times','max_retry','backoff_max_sec','bark_base_url','bark_device_key','bark_group','bark_sound'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && cfg[id] !== undefined && cfg[id] !== null) el.value = cfg[id];
+      });
+    }
+
+    function channelHTML(item) {
+      const on = Number(item.status) === 1;
+      const actionText = on ? '关闭' : '打开';
+      const targetStatus = on ? 2 : 1;
+      const statusText = Number(item.status) === 1 ? '已开启' : Number(item.status) === 2 ? '已关闭' : `未知（${item.status}）`;
+      const onlineText = Number(item.online) === 1 ? '在线' : Number(item.online) === 0 ? '离线' : `未知（${item.online}）`;
+      return `
+        <div class="channel">
+          <div class="kv">
+            <div>名称</div><div>${item.name || '-'}</div>
+            <div>编号</div><div>${item.id}</div>
+            <div>编码</div><div>${item.code || '-'}</div>
+            <div>状态</div><div>${statusText}</div>
+            <div>在线</div><div>${onlineText}</div>
+          </div>
+          <div class="actions">
+            <button class="${on ? 'danger' : ''}" onclick="switchChannel(${item.id}, ${targetStatus})">${actionText} ${item.name || item.code}</button>
+          </div>
+        </div>`;
+    }
+
+    function renderStatus(status) {
+      current = status;
+      const stateMap = {
+        PRIMARY_ACTIVE: '主路开启',
+        FALLBACK_ACTIVE: '兜底开启',
+        SWITCHING_TO_FALLBACK: '正在切换到兜底',
+        SWITCHING_TO_PRIMARY: '正在切换回主路',
+      };
+      document.getElementById('state-pill').textContent = `状态机：${stateMap[status.state] || status.state}`;
+      document.getElementById('last-check').textContent = status.last_check_at || '-';
+      document.getElementById('last-switch').textContent = status.last_switch_at || '-';
+      const actionMap = {
+        checked: '已检查',
+        switch_to_fallback: '切换到兜底',
+        switch_to_primary: '切回主路',
+        manual_switch: '手动开关',
+      };
+      document.getElementById('last-action').textContent = actionMap[status.last_action] || status.last_action || '-';
+      document.getElementById('last-error').textContent = status.last_error || '-';
+      document.getElementById('channels').innerHTML = [status.primary, status.fallback].filter(Boolean).map(channelHTML).join('');
+      document.getElementById('manual-actions').innerHTML = [status.primary, status.fallback].filter(Boolean).map((item) => {
+        const on = Number(item.status) === 1;
+        const actionText = on ? '关闭' : '打开';
+        const targetStatus = on ? 2 : 1;
+        return `
+        <div class="channel">
+          <strong>${item.name || item.code}</strong>（编号：${item.id}）
+          <div class="actions">
+            <button class="${on ? 'danger' : ''}" onclick="switchChannel(${item.id}, ${targetStatus})">${actionText}</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function refreshAll() {
+      try {
+        const [status, cfg] = await Promise.all([fetchJSON('/api/status'), fetchJSON('/api/config')]);
+        renderStatus(status);
+        fillConfig(cfg);
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    async function saveConfig() {
+      const payload = {
+        base_url: document.getElementById('base_url').value,
+        authorization: document.getElementById('authorization').value,
+        primary_code: document.getElementById('primary_code').value,
+        fallback_code: document.getElementById('fallback_code').value,
+        poll_interval_sec: Number(document.getElementById('poll_interval_sec').value),
+        http_timeout_sec: Number(document.getElementById('http_timeout_sec').value),
+        down_confirm_times: Number(document.getElementById('down_confirm_times').value),
+        recover_confirm_times: Number(document.getElementById('recover_confirm_times').value),
+        max_retry: Number(document.getElementById('max_retry').value),
+        backoff_max_sec: Number(document.getElementById('backoff_max_sec').value),
+        bark_base_url: document.getElementById('bark_base_url').value,
+        bark_device_key: document.getElementById('bark_device_key').value,
+        bark_group: document.getElementById('bark_group').value,
+        bark_sound: document.getElementById('bark_sound').value,
+      };
+      try {
+        await fetchJSON('/api/config', { method: 'POST', body: JSON.stringify(payload) });
+        showToast('配置已保存');
+        await refreshAll();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    async function switchChannel(id, status) {
+      try {
+        await fetchJSON('/api/action/switch', { method: 'POST', body: JSON.stringify({ id, status }) });
+        showToast('操作已执行');
+        await refreshAll();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    async function reloadNow() {
+      try {
+        const status = await fetchJSON('/api/action/reload', { method: 'POST' });
+        renderStatus(status);
+        showToast('巡检完成');
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    async function testBark() {
+      const payload = {
+        bark_base_url: document.getElementById('bark_base_url').value,
+        bark_device_key: document.getElementById('bark_device_key').value,
+        bark_group: document.getElementById('bark_group').value,
+        bark_sound: document.getElementById('bark_sound').value,
+      };
+      try {
+        await fetchJSON('/api/action/test-bark', { method: 'POST', body: JSON.stringify(payload) });
+        showToast('测试通知已发送');
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    refreshAll();
+    setInterval(refreshAll, 10000);
+  </script>
+</body>
+</html>
