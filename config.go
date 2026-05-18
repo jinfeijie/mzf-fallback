@@ -16,11 +16,13 @@ var defaultConfig = Config{
 	PollIntervalSec:     10,
 	HTTPTimeoutSec:      5,
 	DownConfirmTimes:    2,
-	RecoverConfirmTimes:  3,
-	MaxRetry:             3,
+	RecoverConfirmTimes: 3,
+	MaxRetry:            3,
 	BackoffMaxSec:       60,
 	BarkBaseURL:         "https://api.day.app",
 	BarkGroup:           "mzf-fallback",
+	LoginUsername:       "admin",
+	LoginPassword:       "admin123",
 }
 
 var configPath = filepath.Join(getWorkingDir(), "config.json")
@@ -42,6 +44,8 @@ type Config struct {
 	BarkDeviceKey       string `json:"bark_device_key"`
 	BarkGroup           string `json:"bark_group"`
 	BarkSound           string `json:"bark_sound"`
+	LoginUsername       string `json:"login_username"`
+	LoginPassword       string `json:"login_password"`
 }
 
 type ConfigStore struct {
@@ -121,6 +125,8 @@ func (cfg *Config) normalize() {
 	cfg.BarkDeviceKey = strings.TrimSpace(cfg.BarkDeviceKey)
 	cfg.BarkGroup = strings.TrimSpace(cfg.BarkGroup)
 	cfg.BarkSound = strings.TrimSpace(cfg.BarkSound)
+	cfg.LoginUsername = strings.TrimSpace(cfg.LoginUsername)
+	cfg.LoginPassword = strings.TrimSpace(cfg.LoginPassword)
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultConfig.BaseURL
 	}
@@ -154,6 +160,12 @@ func (cfg *Config) normalize() {
 	if cfg.BarkGroup == "" {
 		cfg.BarkGroup = defaultConfig.BarkGroup
 	}
+	if cfg.LoginUsername == "" {
+		cfg.LoginUsername = defaultConfig.LoginUsername
+	}
+	if cfg.LoginPassword == "" {
+		cfg.LoginPassword = defaultConfig.LoginPassword
+	}
 }
 
 func (cfg Config) validate() error {
@@ -183,6 +195,12 @@ func (cfg Config) validate() error {
 	}
 	if cfg.BackoffMaxSec < 1 {
 		return errors.New("backoff_max_sec 必须大于等于 1")
+	}
+	if cfg.LoginUsername == "" {
+		return errors.New("login_username 不能为空")
+	}
+	if cfg.LoginPassword == "" {
+		return errors.New("login_password 不能为空")
 	}
 	return nil
 }
@@ -229,6 +247,12 @@ func mergeConfig(dst *Config, patch Config) {
 	}
 	if patch.BarkSound != "" {
 		dst.BarkSound = patch.BarkSound
+	}
+	if patch.LoginUsername != "" {
+		dst.LoginUsername = patch.LoginUsername
+	}
+	if patch.LoginPassword != "" {
+		dst.LoginPassword = patch.LoginPassword
 	}
 }
 

@@ -6,27 +6,82 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
-//go:embed templates/index.html
+//go:embed templates/*.html
 var templateFS embed.FS
 
 func newApp(store *ConfigStore, guardian *Guardian) http.Handler {
-	tpl := template.Must(template.ParseFS(templateFS, "templates/index.html"))
+	tpl := template.Must(template.ParseFS(templateFS, "templates/index.html", "templates/login.html"))
+	auth := NewAuthManager()
 	mux := http.NewServeMux()
+	apiMux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 			return
 		}
-		if err := tpl.Execute(w, nil); err != nil {
+		if !auth.IsAuthenticated(r) {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		if err := tpl.ExecuteTemplate(w, "index.html", nil); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
 	})
 
-	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		if auth.IsAuthenticated(r) {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		if r.Method == http.MethodGet {
+			if err := tpl.ExecuteTemplate(w, "login.html", map[string]any{"error": ""}); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			}
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+			return
+		}
+
+		cfg, err := store.Load()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+
+		username := strings.TrimSpace(r.FormValue("username"))
+		password := strings.TrimSpace(r.FormValue("password"))
+		if username != cfg.LoginUsername || password != cfg.LoginPassword {
+			w.WriteHeader(http.StatusUnauthorized)
+			if err := tpl.ExecuteTemplate(w, "login.html", map[string]any{"error": "账号或密码错误"}); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			}
+			return
+		}
+
+		if err := auth.Login(w, r); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+		http.Redirect(w, r, "/", http.StatusFound)
+	})
+
+	mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+			return
+		}
+		auth.Logout(w, r)
+		http.Redirect(w, r, "/login", http.StatusFound)
+	})
+
+	apiMux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 			return
@@ -34,7 +89,7 @@ func newApp(store *ConfigStore, guardian *Guardian) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"data": guardian.Snapshot()})
 	})
 
-	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+	apiMux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			cfg, err := store.Load()
@@ -64,7 +119,7 @@ func newApp(store *ConfigStore, guardian *Guardian) http.Handler {
 		}
 	})
 
-	mux.HandleFunc("/api/action/switch", func(w http.ResponseWriter, r *http.Request) {
+	apiMux.HandleFunc("/api/action/switch", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 			return
@@ -89,7 +144,7 @@ func newApp(store *ConfigStore, guardian *Guardian) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"data": data})
 	})
 
-	mux.HandleFunc("/api/action/test-bark", func(w http.ResponseWriter, r *http.Request) {
+	apiMux.HandleFunc("/api/action/test-bark", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 			return
@@ -112,7 +167,7 @@ func newApp(store *ConfigStore, guardian *Guardian) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
 	})
 
-	mux.HandleFunc("/api/action/reload", func(w http.ResponseWriter, r *http.Request) {
+	apiMux.HandleFunc("/api/action/reload", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 			return
@@ -124,6 +179,8 @@ func newApp(store *ConfigStore, guardian *Guardian) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"data": data})
 	})
+
+	mux.Handle("/api/", requireAPIAuth(auth, apiMux))
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
@@ -141,6 +198,16 @@ func writeJSON(w http.ResponseWriter, status int, payload map[string]any) {
 func decodeJSON(r *http.Request, v any) error {
 	defer r.Body.Close()
 	return jsonDecode(r.Body, v)
+}
+
+func requireAPIAuth(auth *AuthManager, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth.IsAuthenticated(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+	})
 }
 
 func logMiddleware(next http.Handler) http.Handler {

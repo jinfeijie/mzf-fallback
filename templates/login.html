@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>后台登录</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&display=swap");
+    :root {
+      --bg-0: #fef7f0;
+      --bg-1: #fffdfb;
+      --bg-2: #fff5ee;
+      --bg-3: #f0e0d3;
+      --text-0: #2d1f16;
+      --text-1: #6b5040;
+      --text-2: #a08070;
+      --accent: #f06030;
+      --accent-hot: #e04820;
+      --accent-2: #ff8c42;
+      --ok: #2da05d;
+      --err: #d04040;
+      --warn: #e89820;
+      --info: #5088cc;
+      --surface: var(--bg-1);
+      --surface-soft: var(--bg-2);
+      --border: var(--bg-3);
+      --text: var(--text-0);
+      --muted: var(--text-1);
+      --subtle: var(--text-2);
+      --shadow-sm: 0 10px 24px rgba(240, 96, 48, 0.08);
+      --shadow-md: 0 18px 40px rgba(240, 96, 48, 0.12);
+      --focus-ring: 0 0 0 3px rgba(240, 96, 48, 0.18);
+      --radius-card: 18px;
+      --radius-control: 10px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top left, rgba(255, 140, 66, 0.16), transparent 30%), var(--bg-0); color: var(--text); padding: 16px; }
+    .card { width: min(440px, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 28px; box-shadow: var(--shadow-sm); }
+    h1 { margin: 0 0 10px; font-size: 34px; line-height: 1.1; font-family: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .hint { color: var(--muted); margin-bottom: 20px; font-size: 15px; line-height: 1.5; }
+    label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; font-weight: 500; }
+    input { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-control); padding: 11px 13px; font-size: 14px; margin-bottom: 14px; background: var(--surface); color: var(--text); transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease; }
+    input::placeholder { color: var(--subtle); }
+    input:focus { outline: 0; border-color: var(--accent); box-shadow: var(--focus-ring); background: #fff; }
+    button { width: 100%; border: 0; border-radius: 8px; padding: 12px 14px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 10px 18px rgba(240, 96, 48, 0.2); transition: transform .16s ease, box-shadow .16s ease, filter .16s ease; }
+    button:hover { transform: translateY(-1px); box-shadow: 0 14px 24px rgba(240, 96, 48, 0.24); filter: saturate(1.04); }
+    button:focus-visible { outline: 0; box-shadow: var(--focus-ring); }
+    .error { min-height: 22px; margin-bottom: 14px; color: var(--err); font-size: 14px; font-weight: 500; }
+    @media (max-width: 640px) {
+      .card { padding: 24px 20px; }
+      h1 { font-size: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <form class="card" method="post" action="/login">
+    <h1>后台登录</h1>
+    <div class="hint">登录后才能查看和操作支付兜底后台。</div>
+    <div class="error">{{index . "error"}}</div>
+    <label for="username">账号</label>
+    <input id="username" name="username" autocomplete="username" required>
+    <label for="password">密码</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">登录</button>
+  </form>
+</body>
+</html>
