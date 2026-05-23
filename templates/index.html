@@ -227,11 +227,16 @@
       }).join('');
     }
 
+    let configDirty = false;
+    document.querySelectorAll('#authorization,#base_url,#login_username,#login_password,#primary_code,#fallback_code,#poll_interval_sec,#http_timeout_sec,#down_confirm_times,#recover_confirm_times,#max_retry,#backoff_max_sec,#bark_base_url,#bark_device_key,#bark_group,#bark_sound').forEach(el => {
+      el.addEventListener('input', () => { configDirty = true; });
+    });
+
     async function refreshAll() {
       try {
         const [status, cfg] = await Promise.all([fetchJSON('/api/status'), fetchJSON('/api/config')]);
         renderStatus(status);
-        fillConfig(cfg);
+        if (!configDirty) fillConfig(cfg);
       } catch (e) {
         showToast(e.message, true);
       }
@@ -258,6 +263,7 @@
       };
       try {
         await fetchJSON('/api/config', { method: 'POST', body: JSON.stringify(payload) });
+        configDirty = false;
         showToast('配置已保存');
         await refreshAll();
       } catch (e) {
